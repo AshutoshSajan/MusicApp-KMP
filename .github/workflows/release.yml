@@ -1,0 +1,159 @@
+name: Release — Android/Desktop/Web (cloud only, unsigned)
+
+# Nothing is built locally. Push a tag like v1.0.0 and GitHub Actions
+# builds Android / Desktop (Linux+Windows) / Web (unsigned) and attaches
+# everything to a GitHub Release. Manual run via workflow_dispatch.
+# macOS desktop + iOS builds are disabled (no Apple runners/certs).
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.caching=true"
+
+jobs:
+  android:
+    name: Android (APK + AAB, unsigned/debug-signed)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build release APK + AAB (no keystore → debug-signed)
+        run: ./gradlew :androidApp:assembleRelease :androidApp:bundleRelease --no-daemon --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: androidApp/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+
+      - name: Upload AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-aab
+          path: androidApp/build/outputs/bundle/release/*.aab
+          if-no-files-found: error
+
+  web:
+    name: Web (Kotlin/JS browser distribution)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build web distribution
+        run: ./gradlew :webApp:jsBrowserDistribution --no-daemon --stacktrace
+
+      - name: Zip web dist
+        run: |
+          cd webApp/build/dist/js/productionExecutable
+          zip -r ../../../../web-dist.zip .
+          ls -la ../../../../web-dist.zip
+
+      - name: Upload web dist (folder)
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: webApp/build/dist/js/productionExecutable
+          if-no-files-found: error
+
+      - name: Upload web zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist-zip
+          path: web-dist.zip
+          if-no-files-found: error
+
+  desktop:
+    name: Desktop (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build native package for current OS + portable distributable
+        run: ./gradlew :desktopApp:packageDistributionForCurrentOS :desktopApp:createDistributable --no-daemon --stacktrace
+
+      - name: List produced packages
+        shell: bash
+        run: find desktopApp/build/compose/binaries -maxdepth 4 -type f | head -n 50
+
+      - name: Upload native packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.os }}
+          path: desktopApp/build/compose/binaries/main/**/*
+          if-no-files-found: error
+
+  github-release:
+    name: Publish GitHub Release
+    needs: [android, web, desktop]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: Pack desktop + debug info for release assets
+        run: |
+          ls -R ./artifacts | head -n 100
+          cd ./artifacts
+          for d in desktop-ubuntu-latest desktop-windows-latest; do
+            if [ -d "$d" ]; then (cd "$d" && zip -r "../$d.zip" .) fi
+          done
+          if [ -d web-dist ]; then (cd web-dist && zip -r ../web-dist-folder.zip .) fi
+          ls -la .
+
+      - name: Create GitHub Release with all assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/android-apk/*.apk
+            artifacts/android-aab/*.aab
+            artifacts/web-dist-zip/*.zip
+            artifacts/web-dist-folder.zip
+            artifacts/desktop-ubuntu-latest.zip
+            artifacts/desktop-windows-latest.zip
+          generate_release_notes: true
+          # NOTE: Android APK/AAB without a keystore are debug-signed and NOT
+          # Play-Store ready. macOS desktop + iOS builds are disabled.
+          # Desktop artifacts are unsigned native installers per-OS.
