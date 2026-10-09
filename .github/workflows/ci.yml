@@ -24,17 +24,23 @@ jobs:
           java-version: "17"
 
       # ubuntu-latest runners already ship an Android SDK (ANDROID_SDK_ROOT).
-      # Install the API-36 packages this project compiles against (compileSdk 36)
-      # and accept licenses. Split into small steps so a failure names its cause.
+      # This project compiles against API 37, which Google publishes as
+      # `platforms;android-37.0` (minor-version scheme; the integer
+      # `platforms;android-37` does not exist). AGP looks up `android-37`,
+      # so symlink it. Split into small steps so a failure names its cause.
       - name: Show Android SDK state
         run: |
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
           ls "$ANDROID_SDK_ROOT"
           "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --list_installed
 
-      - name: Install Android platform + build-tools (API 36)
+      - name: Install Android platform + build-tools (API 37)
         run: |
-          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          "$SDKMANAGER" --install "platforms;android-37.0" "build-tools;37.0.0" "platform-tools"
+          PLATFORMS="$ANDROID_SDK_ROOT/platforms"
+          if [ ! -e "$PLATFORMS/android-37" ]; then ln -s android-37.0 "$PLATFORMS/android-37"; fi
+          ls -la "$PLATFORMS" | grep 37
 
       - name: Accept Android SDK licenses
         run: yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
