@@ -1,0 +1,60 @@
+name: CI — verify (cloud only)
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.caching=true"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # ubuntu-latest runners already ship an Android SDK (ANDROID_SDK_ROOT).
+      # This project compiles against API 37, which Google publishes as
+      # `platforms;android-37.0` (minor-version scheme; the integer
+      # `platforms;android-37` does not exist). AGP looks up `android-37`,
+      # so symlink it. Split into small steps so a failure names its cause.
+      - name: Show Android SDK state
+        run: |
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          ls "$ANDROID_SDK_ROOT"
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --list_installed
+
+      - name: Install Android platform + build-tools (API 37)
+        run: |
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          "$SDKMANAGER" --install "platforms;android-37.0" "build-tools;37.0.0" "platform-tools"
+          PLATFORMS="$ANDROID_SDK_ROOT/platforms"
+          if [ ! -e "$PLATFORMS/android-37" ]; then ln -s android-37.0 "$PLATFORMS/android-37"; fi
+          ls -la "$PLATFORMS" | grep 37
+
+      - name: Accept Android SDK licenses
+        run: yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # The checked-in kotlin-js-store/yarn.lock is stale relative to current
+      # dependency versions, so the plugin's lockfile check would fail.
+      # Regenerate it in-workspace (cloud only, nothing committed).
+      - name: Refresh Kotlin/JS yarn lock
+        run: ./gradlew kotlinUpgradeYarnLock --no-daemon --stacktrace
+
+      # Lightweight gate: shared tests + Android debug. Full per-OS packaging
+      # happens in release.yml (tag-triggered) to save CI minutes.
+      - name: Run shared checks + Android debug build
+        run: ./gradlew :shared:check :androidApp:assembleDebug --no-daemon --stacktrace

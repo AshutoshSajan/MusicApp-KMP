@@ -50,6 +50,9 @@ kotlin {
     jvm("desktop")
     js(IR) {
         browser()
+        // Required so Compose UI test binaries bundle the Skiko runtime
+        // (see CMP-4906); without it checkComposeUiTestConfigurationForJs fails.
+        binaries.executable()
     }
 
     applyDefaultHierarchyTemplate()
