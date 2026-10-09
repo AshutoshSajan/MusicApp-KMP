@@ -124,7 +124,7 @@ kotlin {
 
 android {
     namespace = "com.example.musicapp_kmp"
-    compileSdk = 37
+    compileSdk = 36
     defaultConfig {
         minSdk = 24
     }

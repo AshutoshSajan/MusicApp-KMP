@@ -30,14 +30,20 @@ jobs:
           java-version: "17"
 
       # ubuntu-latest runners already ship an Android SDK (ANDROID_SDK_ROOT).
-      # Install the API-37 packages this project compiles against (compileSdk 37)
-      # and accept licenses — no third-party action needed.
-      - name: Install Android SDK packages (API 37)
+      # Install the API-36 packages this project compiles against (compileSdk 36)
+      # and accept licenses. Split into small steps so a failure names its cause.
+      - name: Show Android SDK state
         run: |
-          : "${ANDROID_SDK_ROOT:?ANDROID_SDK_ROOT is not set on this runner}"
-          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          "$SDKMANAGER" --install "platforms;android-37" "build-tools;37.0.0" "platform-tools"
-          yes | "$SDKMANAGER" --licenses > /dev/null
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          ls "$ANDROID_SDK_ROOT"
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --list_installed
+
+      - name: Install Android platform + build-tools (API 36)
+        run: |
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+
+      - name: Accept Android SDK licenses
+        run: yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
