@@ -42,6 +42,12 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      # The checked-in kotlin-js-store/yarn.lock is stale relative to current
+      # dependency versions, so the plugin's lockfile check would fail.
+      # Regenerate it in-workspace (cloud only, nothing committed).
+      - name: Refresh Kotlin/JS yarn lock
+        run: ./gradlew kotlinUpgradeYarnLock --no-daemon --stacktrace
+
       # Lightweight gate: shared tests + Android debug. Full per-OS packaging
       # happens in release.yml (tag-triggered) to save CI minutes.
       - name: Run shared checks + Android debug build

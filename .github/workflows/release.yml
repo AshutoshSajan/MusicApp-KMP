@@ -80,6 +80,12 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      # The checked-in kotlin-js-store/yarn.lock is stale relative to current
+      # dependency versions, so the plugin's lockfile check would fail.
+      # Regenerate it in-workspace (cloud only, nothing committed).
+      - name: Refresh Kotlin/JS yarn lock
+        run: ./gradlew kotlinUpgradeYarnLock --no-daemon --stacktrace
+
       - name: Build web distribution
         run: ./gradlew :webApp:jsBrowserDistribution --no-daemon --stacktrace
 
