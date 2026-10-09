@@ -18,13 +18,19 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      # ubuntu-latest runners already ship an Android SDK (ANDROID_SDK_ROOT).
+      # Install the API-37 packages this project compiles against (compileSdk 37)
+      # and accept licenses — no third-party action needed.
+      - name: Install Android SDK packages (API 37)
+        run: |
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          sdkmanager --install "platforms;android-37" "build-tools;37.0.0" "platform-tools"
+          yes | sdkmanager --licenses > /dev/null
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
