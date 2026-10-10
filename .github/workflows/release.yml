@@ -98,8 +98,8 @@ jobs:
       - name: Zip web dist
         run: |
           cd webApp/build/dist/js/productionExecutable
-          zip -r ../../../../web-dist.zip .
-          ls -la ../../../../web-dist.zip
+          zip -r "$GITHUB_WORKSPACE/web-dist.zip" .
+          ls -la "$GITHUB_WORKSPACE/web-dist.zip"
 
       - name: Upload web dist (folder)
         uses: actions/upload-artifact@v4
@@ -141,6 +141,51 @@ jobs:
         shell: bash
         run: find desktopApp/build/compose/binaries -maxdepth 4 -type f | head -n 50
 
+      # The Compose Gradle plugin has no AppImage target, so wrap the portable
+      # distributable (bundled JRE + launcher) into an AppImage with appimagetool.
+      # Linux-only: AppImages are built on the oldest runner (ubuntu) for max glibc compat.
+      - name: Build AppImage for Linux
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          DIST="$(find desktopApp/build/compose/binaries/main/app -maxdepth 1 -mindepth 1 -type d | head -n 1)"
+          echo "Distributable: $DIST"
+          LAUNCHER="$(basename "$(find "$DIST/bin" -maxdepth 1 -mindepth 1 | head -n 1)")"
+          echo "Launcher: $LAUNCHER"
+          rm -rf AppDir
+          mkdir -p AppDir/usr
+          cp -r "$DIST/." AppDir/usr/
+          printf '#!/bin/sh\nHERE="$(dirname "$(readlink -f "$0")")"\nexec "$HERE/usr/bin/%s" "$@"\n' "$LAUNCHER" > AppDir/AppRun
+          chmod +x AppDir/AppRun
+          cat > "AppDir/${LAUNCHER}.desktop" <<DESKTOP
+          [Desktop Entry]
+          Type=Application
+          Name=MusicApp-KMP
+          Exec=${LAUNCHER}
+          Icon=musicapp
+          Comment=Music player built with Compose Multiplatform
+          Categories=AudioVideo;Audio;Player;
+          Terminal=false
+          DESKTOP
+          # Placeholder icon (repo ships no artwork yet): green rounded square + note.
+          # Replace AppDir/musicapp.svg with real artwork when available.
+          cat > AppDir/musicapp.svg <<'SVG'
+          <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+            <rect x="8" y="8" width="240" height="240" rx="52" fill="#121212"/>
+            <rect x="8" y="8" width="240" height="240" rx="52" fill="none" stroke="#1DB954" stroke-width="10"/>
+            <ellipse cx="92" cy="186" rx="30" ry="24" fill="#1DB954"/>
+            <ellipse cx="180" cy="172" rx="30" ry="24" fill="#1DB954"/>
+            <rect x="112" y="70" width="14" height="120" fill="#1DB954"/>
+            <rect x="200" y="56" width="14" height="120" fill="#1DB954"/>
+            <polygon points="112,70 214,56 214,84 112,98" fill="#1DB954"/>
+          </svg>
+          SVG
+          wget -q "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage" -O appimagetool.AppImage
+          chmod +x appimagetool.AppImage
+          mkdir -p desktopApp/build/compose/binaries/main/appimage
+          # No FUSE on GitHub runners -> extract-and-run mode
+          APPIMAGE_EXTRACT_AND_RUN=1 ./appimagetool.AppImage AppDir "desktopApp/build/compose/binaries/main/appimage/MusicApp-KMP-x86_64.AppImage"
+          ls -la desktopApp/build/compose/binaries/main/appimage/
+
       - name: Upload native packages
         uses: actions/upload-artifact@v4
         with:
@@ -177,6 +222,7 @@ jobs:
             artifacts/web-dist-zip/*.zip
             artifacts/web-dist-folder.zip
             artifacts/desktop-ubuntu-latest.zip
+            artifacts/desktop-ubuntu-latest/appimage/*.AppImage
             artifacts/desktop-windows-latest.zip
           generate_release_notes: true
           # NOTE: Android APK/AAB without a keystore are debug-signed and NOT
